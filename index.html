@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GJM Scan — QR Code, Code-barre &amp; Scanner</title>
+<meta name="description" content="Générateur et scanner de QR codes et codes-barres — GJM Technologie">
+<meta name="theme-color" content="#0a0e16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="icon" href="icons/favicon-64.png" sizes="64x64">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <img src="icons/logo.png" class="topbar__logo" alt="GJM Technologie">
+    <div class="topbar__title"><b>GJM Scan</b><span>GJM Technologie</span></div>
+    <div class="topbar__spacer"></div>
+    <button class="iconbtn" id="lockToggleBtn" title="Verrouiller"><span data-icon="lock"></span></button>
+  </header>
+
+  <div class="install-banner hidden" id="installBanner">
+    <span class="install-banner__icon" data-icon="download"></span>
+    <div class="install-banner__body">
+      <b>Installer GJM Scan</b>
+      <small>Ajoutez l'application sur cet appareil pour l'ouvrir hors ligne</small>
+    </div>
+    <button class="btn btn-primary btn-sm" id="installBannerBtn">Installer</button>
+    <button class="iconbtn install-banner__close" id="installBannerClose"><span data-icon="close"></span></button>
+  </div>
+
+  <main class="views">
+
+    <!-- QR CODE -->
+    <section class="view active" id="view-qr">
+      <div class="view-head">
+        <span class="eyebrow">Générateur</span>
+        <h1>QR Code</h1>
+        <p>Choisissez ce que le QR Code doit contenir.</p>
+      </div>
+      <div class="type-grid" id="qrTypeGrid"></div>
+      <div class="section-title">Codes générés</div>
+      <div class="saved-list" id="qrSavedList"></div>
+    </section>
+
+    <!-- CODE BARRE -->
+    <section class="view" id="view-barcode">
+      <div class="view-head">
+        <span class="eyebrow">Générateur</span>
+        <h1>Code-barre</h1>
+        <p>Même principe que le QR Code, au format code-barre.</p>
+      </div>
+      <div class="type-grid" id="bcTypeGrid"></div>
+      <div class="section-title">Codes générés</div>
+      <div class="saved-list" id="bcSavedList"></div>
+    </section>
+
+    <!-- SCANNER -->
+    <section class="view" id="view-scanner">
+      <div class="view-head">
+        <span class="eyebrow">Caméra</span>
+        <h1>Scanner</h1>
+        <p>Scannez un document ou un code pour le lire.</p>
+      </div>
+      <div class="scan-choice">
+        <button class="scan-btn" id="scanDocBtn">
+          <span class="scan-btn__frame" data-icon="camera"></span>
+          <span><b>Scanner un document</b><small>Capturer et enregistrer en PDF, Word, Excel, image…</small></span>
+        </button>
+        <button class="scan-btn" id="scanQrBtn">
+          <span class="scan-btn__frame" data-icon="scanQr"></span>
+          <span><b>Scanner le QR Code</b><small>Lire un QR Code ou un code-barre à la caméra</small></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- OPTION -->
+    <section class="view" id="view-options">
+      <div class="view-head">
+        <span class="eyebrow">Réglages</span>
+        <h1>Option</h1>
+        <p>Sécurité, sauvegarde et installation de l'application.</p>
+      </div>
+      <div class="opt-card" id="openSecurityBtn">
+        <span class="opt-card__icon" data-icon="lock"></span>
+        <span><b>Sécurité</b><small>Protéger l'application par mot de passe</small></span>
+        <span class="opt-card__chev" data-icon="chevron"></span>
+      </div>
+      <div class="opt-card" id="openBackupBtn">
+        <span class="opt-card__icon" data-icon="backup"></span>
+        <span><b>Sauvegarde</b><small>Exporter ou restaurer vos données</small></span>
+        <span class="opt-card__chev" data-icon="chevron"></span>
+      </div>
+      <div class="opt-card hidden" id="installBtn">
+        <span class="opt-card__icon" data-icon="download"></span>
+        <span><b>Installer l'application</b><small>Ajouter GJM Scan sur cet appareil</small></span>
+        <span class="opt-card__chev" data-icon="chevron"></span>
+      </div>
+      <div class="section-title">À propos</div>
+      <p class="dim" style="font-size:12.5px;line-height:1.6;">GJM Scan — GJM Technologie. Toutes vos données (codes, documents, identifiants) restent stockées uniquement sur cet appareil.</p>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <div class="tabbar__inner">
+      <button class="tab active" data-tab="qr"><span data-icon="qr"></span><span>QR CODE</span></button>
+      <button class="tab" data-tab="barcode"><span data-icon="barcode"></span><span>CODE BARRE</span></button>
+      <button class="tab" data-tab="scanner"><span data-icon="scanner"></span><span>SCANNER</span></button>
+      <button class="tab" data-tab="options"><span data-icon="options"></span><span>OPTION</span></button>
+    </div>
+  </nav>
+
+</div>
+
+<div class="overlay hidden" id="sheetOverlay">
+  <div class="sheet" id="sheetBody"></div>
+</div>
+
+<div class="lock-screen hidden" id="lockScreen"></div>
+
+<div class="toast" id="toast"></div>
+
+<script src="vendor/qrcode-base.js"></script>
+<script src="vendor/qrcode.min.js"></script>
+<script src="vendor/JsBarcode.all.min.js"></script>
+<script src="vendor/html5-qrcode.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
