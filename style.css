@@ -25,10 +25,10 @@
 }
 
 :root {
-  --void: #241d13;
-  --panel: #322920;
-  --panel-2: #3d3226;
-  --panel-3: #493c2c;
+  --void: #1e2124;
+  --panel: #2a2d31;
+  --panel-2: #33373c;
+  --panel-3: #3c4045;
   --border: rgba(255,255,255,0.09);
   --border-soft: rgba(255,255,255,0.05);
   --blue: #2e8fea;
@@ -38,9 +38,9 @@
   --green-dark-1: #17331e;
   --green-dark-2: #0f2115;
   --red: #ff4438;
-  --ink: #f1ead9;
-  --ink-dim: #b7a98d;
-  --ink-faint: #8a7c60;
+  --ink: #eceef0;
+  --ink-dim: #a3a9b0;
+  --ink-faint: #6f757c;
   --radius: 18px;
   --radius-sm: 12px;
   --shadow: 0 20px 50px rgba(0,0,0,0.45);
@@ -55,7 +55,7 @@ body {
   margin: 0;
   background: var(--void);
   background-image:
-    radial-gradient(1200px 600px at 15% -10%, rgba(230,181,90,0.14), transparent 60%),
+    radial-gradient(1200px 600px at 15% -10%, rgba(46,143,234,0.14), transparent 60%),
     radial-gradient(900px 500px at 110% 10%, rgba(108,194,74,0.09), transparent 55%);
   color: var(--ink);
   font-family: var(--font-body);
@@ -107,8 +107,8 @@ a { color: var(--blue); }
 .install-banner {
   display: flex; align-items: center; gap: 12px;
   margin: 2px 20px 14px;
-  background: linear-gradient(135deg, rgba(230,181,90,0.14), rgba(108,194,74,0.10));
-  border: 1px solid rgba(230,181,90,0.32);
+  background: linear-gradient(135deg, rgba(46,143,234,0.14), rgba(108,194,74,0.10));
+  border: 1px solid rgba(46,143,234,0.32);
   border-radius: 16px; padding: 12px 12px 12px 14px;
   animation: rise 0.3s ease;
 }
@@ -368,7 +368,7 @@ a { color: var(--blue); }
 .lock-screen {
   position: fixed; inset: 0; z-index: 100; background: var(--void);
   display: flex; align-items: center; justify-content: center; padding: 24px;
-  background-image: radial-gradient(900px 500px at 50% -10%, rgba(230,181,90,0.16), transparent 60%);
+  background-image: radial-gradient(900px 500px at 50% -10%, rgba(46,143,234,0.16), transparent 60%);
 }
 .lock-card { width: 100%; max-width: 380px; text-align: center; }
 .lock-card img { width: 84px; height: 84px; border-radius: 20px; margin-bottom: 18px; box-shadow: var(--shadow); }
@@ -430,7 +430,7 @@ a { color: var(--blue); }
   }
   .tabbar__inner {
     grid-template-columns: 1fr;
-    background: var(--panel);
+    background: linear-gradient(155deg, var(--green-dark-1), var(--green-dark-2));
     box-shadow: none;
     padding: 10px;
     gap: 4px;
