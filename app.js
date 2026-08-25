@@ -562,8 +562,7 @@ function renderSavedList(elId, items, emptyMsg) {
   if (!items.length) { el.innerHTML = `<div class="empty-note">${emptyMsg}</div>`; return; }
   el.innerHTML = items.map((r) => `
     <div class="saved-item" data-open-code="${r.id}">
-      <div class="saved-item__thumb"><img src="${r.image}" alt=""></div>
-      <div class="saved-item__body"><b>${escapeHtml(r.name)}</b><small>${r.typeLabel} · ${fmtDate(r.createdAt)}</small></div>
+      <div class="saved-item__body"><b>${escapeHtml(r.name)}</b></div>
       ${svg("chevron")}
     </div>
   `).join("");
