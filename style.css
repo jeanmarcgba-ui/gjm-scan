@@ -38,6 +38,8 @@
   --green-dark-1: #17331e;
   --green-dark-2: #0f2115;
   --red: #ff4438;
+  --gold: #d4af37;
+  --gold-soft: rgba(212,175,55,0.55);
   --ink: #eceef0;
   --ink-dim: #a3a9b0;
   --ink-faint: #6f757c;
@@ -148,7 +150,7 @@ a { color: var(--blue); }
 .tabbar__inner {
   pointer-events: auto;
   width: 100%; max-width: 520px;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: linear-gradient(155deg, var(--green-dark-1), var(--green-dark-2));
   border: 1px solid rgba(108,194,74,0.22);
   border-radius: 20px;
@@ -170,7 +172,7 @@ a { color: var(--blue); }
 .type-card {
   position: relative;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--gold-soft);
   border-radius: var(--radius);
   padding: 16px 14px 14px;
   cursor: pointer;
@@ -178,7 +180,7 @@ a { color: var(--blue); }
   transition: 0.18s ease;
   overflow: hidden;
 }
-.type-card:hover { border-color: rgba(46,143,234,0.4); transform: translateY(-2px); }
+.type-card:hover { border-color: var(--gold); transform: translateY(-2px); }
 .type-card__icon {
   width: 38px; height: 38px; border-radius: 11px;
   display: flex; align-items: center; justify-content: center;
@@ -193,14 +195,37 @@ a { color: var(--blue); }
   text-transform: uppercase; letter-spacing: 0.14em; margin: 30px 0 12px;
 }
 
+/* ---------- Home ---------- */
+.home-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 8px; }
+.home-stat {
+  background: var(--panel); border: 1px solid var(--gold-soft); border-radius: 14px;
+  padding: 14px 10px; text-align: center;
+}
+.home-stat b { display: block; font-family: var(--font-display); font-size: 22px; font-weight: 800; }
+.home-stat span { display: block; font-size: 10.5px; color: var(--ink-dim); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+.home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.home-card {
+  background: var(--panel); border: 1px solid var(--gold-soft); border-radius: var(--radius);
+  padding: 18px 14px; text-align: left; cursor: pointer; transition: 0.18s ease;
+}
+.home-card:hover { border-color: var(--gold); transform: translateY(-2px); }
+.home-card__icon {
+  width: 40px; height: 40px; border-radius: 12px; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-3); color: var(--blue);
+}
+.home-card__icon svg { width: 20px; height: 20px; }
+.home-card b { display: block; font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.home-card small { color: var(--ink-dim); font-size: 11.5px; }
+
 /* ---------- Options list ---------- */
 .opt-card {
   display: flex; align-items: center; gap: 14px;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: 1px solid var(--gold-soft);
   border-radius: var(--radius); padding: 16px; cursor: pointer;
   margin-bottom: 12px; transition: 0.15s ease;
 }
-.opt-card:hover { border-color: rgba(108,194,74,0.4); }
+.opt-card:hover { border-color: var(--gold); }
 .opt-card__icon {
   width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -215,11 +240,11 @@ a { color: var(--blue); }
 .scan-choice { display: flex; flex-direction: column; gap: 14px; }
 .scan-btn {
   display: flex; align-items: center; gap: 16px;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--panel); border: 1px solid var(--gold-soft);
   border-radius: var(--radius); padding: 20px; cursor: pointer; text-align: left;
   transition: 0.18s ease;
 }
-.scan-btn:hover { border-color: rgba(46,143,234,0.45); }
+.scan-btn:hover { border-color: var(--gold); }
 .scan-btn__frame {
   width: 52px; height: 52px; border-radius: 14px; position: relative; flex-shrink: 0;
   background: var(--panel-3); display: flex; align-items: center; justify-content: center; color: var(--blue);
@@ -396,6 +421,9 @@ a { color: var(--blue); }
 @media (max-width: 380px) {
   .type-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .views { padding-left: 14px; padding-right: 14px; }
+  .tab { padding: 8px 2px; gap: 3px; }
+  .tab span { font-size: 8.6px; }
+  .tab svg { width: 17px; height: 17px; }
 }
 
 /* ============================================================

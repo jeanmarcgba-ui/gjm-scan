@@ -36,7 +36,39 @@
   <main class="views">
 
     <!-- QR CODE -->
-    <section class="view active" id="view-qr">
+    <section class="view active" id="view-accueil">
+      <div class="view-head">
+        <span class="eyebrow">Bienvenue</span>
+        <h1>Accueil</h1>
+        <p>Tout GJM Scan en un coup d'œil.</p>
+      </div>
+      <div class="home-stats">
+        <div class="home-stat"><b id="statQr">0</b><span>QR Codes</span></div>
+        <div class="home-stat"><b id="statBc">0</b><span>Codes-barres</span></div>
+        <div class="home-stat"><b id="statDocs">0</b><span>Documents scannés</span></div>
+      </div>
+      <div class="section-title">Accès rapide</div>
+      <div class="home-grid">
+        <button class="home-card" data-goto="qr">
+          <span class="home-card__icon" data-icon="qr"></span>
+          <b>QR Code</b><small>Créer un QR Code</small>
+        </button>
+        <button class="home-card" data-goto="barcode">
+          <span class="home-card__icon" data-icon="barcode"></span>
+          <b>Code-barre</b><small>Créer un code-barre</small>
+        </button>
+        <button class="home-card" data-goto="scanner">
+          <span class="home-card__icon" data-icon="scanner"></span>
+          <b>Scanner</b><small>Scanner un document ou un code</small>
+        </button>
+        <button class="home-card" data-goto="options">
+          <span class="home-card__icon" data-icon="options"></span>
+          <b>Option</b><small>Sécurité et sauvegarde</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="view" id="view-qr">
       <div class="view-head">
         <span class="eyebrow">Générateur</span>
         <h1>QR Code</h1>
@@ -108,7 +140,8 @@
 
   <nav class="tabbar">
     <div class="tabbar__inner">
-      <button class="tab active" data-tab="qr"><span data-icon="qr"></span><span>QR CODE</span></button>
+      <button class="tab active" data-tab="accueil"><span data-icon="home"></span><span>ACCUEIL</span></button>
+      <button class="tab" data-tab="qr"><span data-icon="qr"></span><span>QR CODE</span></button>
       <button class="tab" data-tab="barcode"><span data-icon="barcode"></span><span>CODE BARRE</span></button>
       <button class="tab" data-tab="scanner"><span data-icon="scanner"></span><span>SCANNER</span></button>
       <button class="tab" data-tab="options"><span data-icon="options"></span><span>OPTION</span></button>

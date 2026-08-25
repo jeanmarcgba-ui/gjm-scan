@@ -31,6 +31,7 @@ const ICONS = {
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a1 1 0 01-1-1V4a1 1 0 011-1h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   scanQr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3" stroke-linecap="round" stroke-linejoin="round"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>`,
   play: `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>`,
+  home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-7 8 7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9a1 1 0 001 1h3v-6h4v6h3a1 1 0 001-1v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 function svg(name) { return ICONS[name] || ""; }
 
@@ -254,7 +255,7 @@ function buildFilePayload(kind, files, ctx, extra) {
    STATE
    ============================================================ */
 const state = {
-  activeTab: "qr",
+  activeTab: "accueil",
   currentCodeType: null, // {kind:'qr'|'barcode', type: CODE_TYPES entry}
   pendingFiles: {}, // fieldKey -> [{name,data,size}]
   docCapture: null, // {dataUrl}
@@ -543,6 +544,17 @@ async function refreshSavedLists() {
   const all = (await idbAll("codes")).sort((a, b) => b.createdAt - a.createdAt);
   renderSavedList("qrSavedList", all.filter((r) => r.kind === "qr"), "Aucun QR Code généré pour le moment.");
   renderSavedList("bcSavedList", all.filter((r) => r.kind === "barcode"), "Aucun code-barre généré pour le moment.");
+  refreshHomeStats(all);
+}
+async function refreshHomeStats(allCodes) {
+  const all = allCodes || (await idbAll("codes"));
+  const scans = await idbAll("scans");
+  const qrCount = document.getElementById("statQr");
+  const bcCount = document.getElementById("statBc");
+  const docCount = document.getElementById("statDocs");
+  if (qrCount) qrCount.textContent = all.filter((r) => r.kind === "qr").length;
+  if (bcCount) bcCount.textContent = all.filter((r) => r.kind === "barcode").length;
+  if (docCount) docCount.textContent = scans.length;
 }
 function renderSavedList(elId, items, emptyMsg) {
   const el = document.getElementById(elId);
@@ -1131,6 +1143,7 @@ async function boot() {
   wireInstallButton();
 
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+  document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.goto)));
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-close-sheet]")) closeSheet();
   });
