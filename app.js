@@ -779,11 +779,15 @@ async function openDocScanner() {
   `;
   openSheet(html);
   try {
-    docStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: preferredFacingMode() } } }, false);
+    try {
+      docStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: preferredFacingMode() } } });
+    } catch (err1) {
+      docStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    }
     document.getElementById("docCameraVideo").srcObject = docStream;
   } catch (err) {
-    showFormNote("", false);
-    document.querySelector(".camera-wrap").innerHTML = `<div class="empty-note" style="margin:auto;">Impossible d'accéder à la caméra. Vérifiez les autorisations de votre navigateur.</div>`;
+    const msg = (err && err.message) || String(err);
+    document.querySelector(".camera-wrap").innerHTML = `<div class="empty-note" style="margin:auto;padding:16px;text-align:center;">Impossible d'accéder à la caméra.<br><span class="mono dim" style="font-size:10.5px;">${escapeHtml(msg)}</span></div>`;
   }
   document.getElementById("captureDocBtn").addEventListener("click", captureDocFrame);
 }
@@ -883,24 +887,34 @@ function openQrScanner() {
   openSheet(html);
   startQrScanner();
 }
-function startQrScanner() {
+async function startQrScanner() {
+  const formats = [
+    Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.CODABAR,
+  ];
+  state.html5Qr = new Html5Qrcode("qr-reader", { formatsToSupport: formats, verbose: false });
+  const onSuccess = (decodedText) => { stopQrScanner(); renderScanResult(decodedText); };
+  const scanConfig = { fps: 10, qrbox: { width: 230, height: 230 } };
+
+  const tryStart = (cameraArg) => state.html5Qr.start(cameraArg, scanConfig, onSuccess, () => {});
+
   try {
-    const formats = [
-      Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
-      Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.CODE_39,
-      Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.CODABAR,
-    ];
-    state.html5Qr = new Html5Qrcode("qr-reader", { formatsToSupport: formats, verbose: false });
-    state.html5Qr.start(
-      { facingMode: { ideal: preferredFacingMode() } },
-      { fps: 10, qrbox: { width: 230, height: 230 } },
-      (decodedText) => { stopQrScanner(); renderScanResult(decodedText); },
-      () => {}
-    ).catch(() => {
-      document.getElementById("qr-reader").innerHTML = `<div class="empty-note" style="margin:auto;">Impossible d'accéder à la caméra.</div>`;
-    });
-  } catch (err) {}
+    await tryStart({ facingMode: preferredFacingMode() });
+    return;
+  } catch (err1) {
+    try {
+      const cams = await Html5Qrcode.getCameras();
+      if (!cams || !cams.length) throw new Error("Aucune caméra détectée sur cet appareil.");
+      await tryStart(cams[0].id);
+      return;
+    } catch (err2) {
+      const msg = (err2 && err2.message) || (err1 && err1.message) || String(err2 || err1);
+      const el = document.getElementById("qr-reader");
+      if (el) el.innerHTML = `<div class="empty-note" style="margin:auto;padding:16px;text-align:center;">Impossible d'accéder à la caméra.<br><span class="mono dim" style="font-size:10.5px;">${escapeHtml(msg)}</span></div>`;
+    }
+  }
 }
 function stopQrScanner() {
   if (state.html5Qr) {
