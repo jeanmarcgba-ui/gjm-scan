@@ -185,10 +185,11 @@ const CODE_TYPES = [
   {
     id: "doc", label: "Document", icon: "doc", desc: "Afficher un fichier",
     fields: [
-      { key: "url", label: "Lien du fichier déjà en ligne (GitHub, Drive…)", type: "url", placeholder: "https://raw.githubusercontent.com/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil.", githubUpload: true, ghAccept: "*/*" },
+      { key: "url", label: "Lien du fichier déjà en ligne (GitHub, Drive…)", type: "url", placeholder: "https://raw.githubusercontent.com/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil. Vous pouvez envoyer plusieurs fichiers à la fois.", githubUpload: true, ghAccept: "*/*" },
       { key: "file", label: "Ou téléversez un petit fichier directement", type: "file", accept: "*/*", hint: "Sans lien ci-dessus — utile seulement pour un usage sur cet appareil." },
     ],
     build: (v, ctx) => {
+      if (ctx.ghLinks && ctx.ghLinks.length > 1) return { text: JSON.stringify({ gjm: "doc", items: ctx.ghLinks }), kind: "doc", external: true };
       if (v.url) return { text: normalizeUrl(v.url), kind: "doc", external: true };
       return buildFilePayload("doc", v.file ? [v.file] : [], ctx);
     },
@@ -196,10 +197,11 @@ const CODE_TYPES = [
   {
     id: "gallery", label: "Galerie d'images", icon: "gallery", desc: "Partager plusieurs images",
     fields: [
-      { key: "url", label: "Lien de la galerie déjà en ligne (album partagé…)", type: "url", placeholder: "https://photos.app.goo.gl/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil. L'envoi automatique GitHub gère une image à la fois.", githubUpload: true, ghAccept: "image/*" },
+      { key: "url", label: "Lien de la galerie déjà en ligne (album partagé…)", type: "url", placeholder: "https://photos.app.goo.gl/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil. Vous pouvez envoyer plusieurs images à la fois.", githubUpload: true, ghAccept: "image/*" },
       { key: "files", label: "Ou téléversez vos images directement", type: "files", accept: "image/*", hint: "Sans lien ci-dessus — utile seulement pour un usage sur cet appareil." },
     ],
     build: (v, ctx) => {
+      if (ctx.ghLinks && ctx.ghLinks.length > 1) return { text: JSON.stringify({ gjm: "gallery", items: ctx.ghLinks }), kind: "gallery", external: true };
       if (v.url) return { text: normalizeUrl(v.url), kind: "gallery", external: true };
       return buildFilePayload("gallery", v.files || [], ctx);
     },
@@ -222,10 +224,11 @@ const CODE_TYPES = [
     fields: [
       { key: "title", label: "Titre", type: "text", required: true, placeholder: "Vidéo d'anniversaire" },
       { key: "desc", label: "Description", type: "text", placeholder: "Aperçu de ma fête" },
-      { key: "url", label: "Lien de la vidéo déjà en ligne (YouTube, GitHub…)", type: "url", placeholder: "https://youtube.com/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil.", githubUpload: true, ghAccept: "video/*" },
+      { key: "url", label: "Lien de la vidéo déjà en ligne (YouTube, GitHub…)", type: "url", placeholder: "https://youtube.com/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil. Vous pouvez envoyer plusieurs vidéos à la fois.", githubUpload: true, ghAccept: "video/*" },
       { key: "files", label: "Ou téléversez une vidéo directement", type: "files", accept: "video/*", hint: "Sans lien ci-dessus — utile seulement pour un usage sur cet appareil." },
     ],
     build: (v, ctx) => {
+      if (ctx.ghLinks && ctx.ghLinks.length > 1) return { text: JSON.stringify({ gjm: "video", title: v.title, desc: v.desc || "", items: ctx.ghLinks }), kind: "video", external: true };
       if (v.url) {
         return { text: JSON.stringify({ gjm: "video", title: v.title, desc: v.desc || "", url: normalizeUrl(v.url) }), kind: "video", external: true };
       }
@@ -271,6 +274,7 @@ const state = {
   activeTab: "accueil",
   currentCodeType: null, // {kind:'qr'|'barcode', type: CODE_TYPES entry}
   pendingFiles: {}, // fieldKey -> [{name,data,size}]
+  pendingGhLinks: {}, // fieldKey -> [{name,url,type}] uploaded via GitHub
   docCapture: null, // {dataUrl}
   html5Qr: null,
   authUnlocked: false,
@@ -343,9 +347,10 @@ function fieldHtml(f) {
     <input type="${f.type}" data-field="${f.key}" placeholder="${f.placeholder || ""}" ${req}>
     ${f.githubUpload ? `
       <div class="gh-upload-row">
-        <button type="button" class="btn btn-sm btn-ghost" data-gh-upload="${f.key}" data-gh-accept="${f.ghAccept || "*/*"}">${svg("github")} Téléverser sur GitHub</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-gh-upload="${f.key}" data-gh-accept="${f.ghAccept || "*/*"}">${svg("github")} Téléverser sur GitHub (un ou plusieurs fichiers)</button>
         <span class="gh-upload-status" data-gh-status="${f.key}"></span>
-      </div>` : ""}
+      </div>
+      <div class="file-preview-grid" data-gh-preview="${f.key}"></div>` : ""}
     ${hintHtml}</div>`;
 }
 
@@ -353,6 +358,7 @@ function openTypeForm(kind, typeId) {
   const type = CODE_TYPES.find((t) => t.id === typeId);
   state.currentCodeType = { kind, type };
   state.pendingFiles = {};
+  state.pendingGhLinks = {};
   const kindLabel = kind === "qr" ? "QR Code" : "code-barre";
   const html = `
     <div class="sheet__grip"></div>
@@ -408,20 +414,39 @@ function wireFormEvents() {
       const picker = document.createElement("input");
       picker.type = "file";
       picker.accept = btn.dataset.ghAccept || "*/*";
+      picker.multiple = true;
       picker.onchange = async () => {
-        const file = picker.files[0];
-        if (!file) return;
+        const files = Array.from(picker.files || []);
+        if (!files.length) return;
         const statusEl = document.querySelector(`[data-gh-status="${key}"]`);
         const targetInput = document.querySelector(`[data-field="${key}"]`);
         btn.disabled = true;
-        if (statusEl) { statusEl.textContent = "Envoi en cours…"; statusEl.className = "gh-upload-status"; }
-        try {
-          const link = await uploadFileToGithub(file, gh);
-          if (targetInput) targetInput.value = link;
-          if (statusEl) { statusEl.textContent = "✓ Envoyé et lien rempli"; statusEl.className = "gh-upload-status ok"; }
-        } catch (err) {
-          if (statusEl) { statusEl.textContent = err.message || "Échec de l'envoi"; statusEl.className = "gh-upload-status err"; }
+        const uploaded = [];
+        for (let i = 0; i < files.length; i++) {
+          if (statusEl) { statusEl.textContent = `Envoi ${i + 1}/${files.length}…`; statusEl.className = "gh-upload-status"; }
+          try {
+            const link = await uploadFileToGithub(files[i], gh);
+            uploaded.push({ name: files[i].name, url: link, type: files[i].type });
+          } catch (err) {
+            if (statusEl) { statusEl.textContent = `Erreur sur "${files[i].name}" : ${err.message || "échec"}`; statusEl.className = "gh-upload-status err"; }
+            btn.disabled = false;
+            renderGhPreview(key, uploaded);
+            return;
+          }
         }
+        state.pendingGhLinks[key] = uploaded;
+        if (targetInput) {
+          if (uploaded.length === 1) {
+            targetInput.value = uploaded[0].url;
+            targetInput.readOnly = false;
+          } else {
+            targetInput.value = "";
+            targetInput.placeholder = `${uploaded.length} fichiers envoyés — voir l'aperçu ci-dessous`;
+            targetInput.readOnly = true;
+          }
+        }
+        if (statusEl) { statusEl.textContent = `✓ ${uploaded.length} fichier${uploaded.length > 1 ? "s" : ""} envoyé${uploaded.length > 1 ? "s" : ""}`; statusEl.className = "gh-upload-status ok"; }
+        renderGhPreview(key, uploaded);
         btn.disabled = false;
       };
       picker.click();
@@ -436,6 +461,23 @@ function renderFilePreview(key) {
     if ((f.type || "").startsWith("image/")) return `<img src="${f.data}" alt="${escapeHtml(f.name)}">`;
     return `<div class="file-chip">${escapeHtml(f.name.slice(0, 18))}</div>`;
   }).join("");
+}
+function renderGhPreview(key, items) {
+  const wrap = document.querySelector(`[data-gh-preview="${key}"]`);
+  if (!wrap) return;
+  if (!items || !items.length) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML = items.map((f) => {
+    if ((f.type || "").startsWith("image/")) return `<img src="${f.url}" alt="${escapeHtml(f.name)}" loading="lazy" data-fallback-name="${escapeHtml(f.name.slice(0, 18))}">`;
+    return `<div class="file-chip">${escapeHtml(f.name.slice(0, 18))}</div>`;
+  }).join("");
+  wrap.querySelectorAll("img").forEach((img) => {
+    img.addEventListener("error", () => {
+      const chip = document.createElement("div");
+      chip.className = "file-chip";
+      chip.textContent = img.dataset.fallbackName || "Fichier";
+      img.replaceWith(chip);
+    });
+  });
 }
 
 async function handleGenerateSubmit() {
@@ -454,7 +496,7 @@ async function handleGenerateSubmit() {
   if (!name) { toast("Merci d'indiquer un nom."); return; }
 
   const itemId = uid();
-  const built = type.build(values, { itemId });
+  const built = type.build(values, { itemId, ghLinks: state.pendingGhLinks.url || null });
   if (built.error) { showFormNote(built.error, true); return; }
   if (!built.text) { showFormNote("Merci de compléter les champs obligatoires.", true); return; }
 
@@ -633,6 +675,14 @@ function linkBlock(url, label) {
       <button class="btn btn-accent mt-8" id="openLinkBtn" data-href="${escapeHtml(url)}">${svg("external")} ${label || "Ouvrir le lien"}</button>
     </div>`;
 }
+function itemsBlock(items) {
+  return `<div class="saved-list">${items.map((it) => `
+    <div class="saved-item" data-open-link="${escapeHtml(it.url)}">
+      <div class="saved-item__thumb">${(it.type || "").startsWith("image/") ? `<img src="${escapeHtml(it.url)}" loading="lazy">` : svg("doc")}</div>
+      <div class="saved-item__body"><b>${escapeHtml(it.name)}</b></div>
+      ${svg("external")}
+    </div>`).join("")}</div>`;
+}
 
 function openCodeDetail(record) {
   let contentHtml = "";
@@ -641,7 +691,11 @@ function openCodeDetail(record) {
   } else if (record.type === "link") {
     contentHtml = linkBlock(record.payload);
   } else if ((record.type === "doc" || record.type === "gallery") && record.external && !record.files) {
-    contentHtml = linkBlock(record.payload, "Ouvrir le fichier");
+    let parsed = null;
+    try { parsed = JSON.parse(record.payload); } catch (e) {}
+    contentHtml = (parsed && parsed.items && parsed.items.length)
+      ? itemsBlock(parsed.items)
+      : linkBlock(record.payload, "Ouvrir le fichier");
   } else if (record.type === "wifi") {
     const m = {}; record.payload.replace(/^WIFI:/, "").split(";").forEach((p) => { const i = p.indexOf(":"); if (i > 0) m[p.slice(0, i)] = p.slice(i + 1); });
     contentHtml = `<div style="text-align:left" class="mono" style="font-size:13px;">
@@ -656,7 +710,8 @@ function openCodeDetail(record) {
   } else if (record.type === "video" && record.external && !record.files) {
     try {
       const d = JSON.parse(record.payload);
-      contentHtml = `<div style="text-align:left"><p><b>${escapeHtml(d.title)}</b></p><p class="dim mt-8">${escapeHtml(d.desc)}</p>` + linkBlock(d.url, "Voir la vidéo") + `</div>`;
+      const inner = (d.items && d.items.length) ? itemsBlock(d.items) : linkBlock(d.url, "Voir la vidéo");
+      contentHtml = `<div style="text-align:left"><p><b>${escapeHtml(d.title)}</b></p><p class="dim mt-8">${escapeHtml(d.desc)}</p></div>` + inner;
     } catch (e) {}
   }
   if (record.files && record.files.length) {
@@ -701,6 +756,9 @@ function openCodeDetail(record) {
       const f = record.files[idx];
       if (f) openDataUrlInDevice(f.data);
     });
+  });
+  document.querySelectorAll("[data-open-link]").forEach((it) => {
+    it.addEventListener("click", () => window.open(it.dataset.openLink, "_blank"));
   });
 }
 
@@ -878,8 +936,14 @@ async function renderScanResult(text) {
       panel = `<div style="text-align:left"><p><b>${escapeHtml(parsedJson.title)}</b></p><p class="dim mt-8">${escapeHtml(parsedJson.desc)}</p>
         <button class="btn btn-accent mt-16" id="scanLinkBtn" data-href="${escapeHtml(parsedJson.link)}">${svg("external")} Ouvrir ${escapeHtml(parsedJson.network)}</button></div>`;
     } else if (parsedJson && parsedJson.gjm === "video") {
-      panel = `<div style="text-align:left"><p><b>${escapeHtml(parsedJson.title)}</b></p><p class="dim mt-8">${escapeHtml(parsedJson.desc)}</p>
-        <button class="btn btn-accent mt-16" id="scanLinkBtn" data-href="${escapeHtml(parsedJson.url)}">${svg("play")} Voir la vidéo</button></div>`;
+      if (parsedJson.items && parsedJson.items.length) {
+        panel = `<div style="text-align:left"><p><b>${escapeHtml(parsedJson.title)}</b></p><p class="dim mt-8">${escapeHtml(parsedJson.desc)}</p></div>` + itemsBlock(parsedJson.items);
+      } else {
+        panel = `<div style="text-align:left"><p><b>${escapeHtml(parsedJson.title)}</b></p><p class="dim mt-8">${escapeHtml(parsedJson.desc)}</p>
+          <button class="btn btn-accent mt-16" id="scanLinkBtn" data-href="${escapeHtml(parsedJson.url)}">${svg("play")} Voir la vidéo</button></div>`;
+      }
+    } else if (parsedJson && (parsedJson.gjm === "doc" || parsedJson.gjm === "gallery") && parsedJson.items && parsedJson.items.length) {
+      panel = itemsBlock(parsedJson.items);
     } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text) || /^www\./i.test(text)) {
       const href = normalizeUrl(text);
       panel = `<p class="mono" style="font-size:12.5px;word-break:break-all;">${escapeHtml(text)}</p>
@@ -906,6 +970,9 @@ async function renderScanResult(text) {
   openSheet(html);
   const linkBtn = document.getElementById("scanLinkBtn");
   if (linkBtn) linkBtn.addEventListener("click", () => window.open(linkBtn.dataset.href, "_blank"));
+  document.querySelectorAll("[data-open-link]").forEach((it) => {
+    it.addEventListener("click", () => window.open(it.dataset.openLink, "_blank"));
+  });
   const saveForm = document.getElementById("scanSaveForm");
   if (saveForm) saveForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1317,4 +1384,13 @@ async function boot() {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 }
+// Global safety net: if a hosted thumbnail (saved-item / gallery item) fails
+// to load, fall back to a plain document icon instead of a broken image.
+document.addEventListener("error", (e) => {
+  const img = e.target;
+  if (img.tagName === "IMG" && img.closest(".saved-item__thumb")) {
+    img.closest(".saved-item__thumb").innerHTML = svg("doc");
+  }
+}, true);
+
 document.addEventListener("DOMContentLoaded", boot);
