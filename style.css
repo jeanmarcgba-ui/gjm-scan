@@ -286,6 +286,12 @@ a { color: var(--blue); }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--blue); background: #ffffff; }
 .field textarea { resize: vertical; min-height: 84px; }
 .field small.hint { display: block; margin-top: 6px; color: var(--ink-faint); font-size: 11.5px; }
+.gh-upload-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.gh-upload-row .btn-sm { border: 1px solid var(--gold-soft); }
+.gh-upload-row .btn-sm svg { width: 15px; height: 15px; }
+.gh-upload-status { font-size: 11.5px; color: var(--ink-dim); }
+.gh-upload-status.ok { color: var(--green); }
+.gh-upload-status.err { color: #ff7a70; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; }
 

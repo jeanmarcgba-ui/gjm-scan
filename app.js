@@ -32,6 +32,7 @@ const ICONS = {
   scanQr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3" stroke-linecap="round" stroke-linejoin="round"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>`,
   play: `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>`,
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-7 8 7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9a1 1 0 001 1h3v-6h4v6h3a1 1 0 001-1v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  github: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="9" r="2.4"/><path d="M6 8.4V15.6M6 12c0-3 2-5 5-5h3.6" stroke-linecap="round"/></svg>`,
 };
 function svg(name) { return ICONS[name] || ""; }
 
@@ -183,13 +184,25 @@ const CODE_TYPES = [
   },
   {
     id: "doc", label: "Document", icon: "doc", desc: "Afficher un fichier",
-    fields: [{ key: "file", label: "Téléversez votre fichier", type: "file", accept: "*/*", required: true }],
-    build: (v, ctx) => buildFilePayload("doc", v.file ? [v.file] : [], ctx),
+    fields: [
+      { key: "url", label: "Lien du fichier déjà en ligne (GitHub, Drive…)", type: "url", placeholder: "https://raw.githubusercontent.com/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil.", githubUpload: true, ghAccept: "*/*" },
+      { key: "file", label: "Ou téléversez un petit fichier directement", type: "file", accept: "*/*", hint: "Sans lien ci-dessus — utile seulement pour un usage sur cet appareil." },
+    ],
+    build: (v, ctx) => {
+      if (v.url) return { text: normalizeUrl(v.url), kind: "doc", external: true };
+      return buildFilePayload("doc", v.file ? [v.file] : [], ctx);
+    },
   },
   {
     id: "gallery", label: "Galerie d'images", icon: "gallery", desc: "Partager plusieurs images",
-    fields: [{ key: "files", label: "Téléversez vos images", type: "files", accept: "image/*", required: true }],
-    build: (v, ctx) => buildFilePayload("gallery", v.files || [], ctx),
+    fields: [
+      { key: "url", label: "Lien de la galerie déjà en ligne (album partagé…)", type: "url", placeholder: "https://photos.app.goo.gl/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil. L'envoi automatique GitHub gère une image à la fois.", githubUpload: true, ghAccept: "image/*" },
+      { key: "files", label: "Ou téléversez vos images directement", type: "files", accept: "image/*", hint: "Sans lien ci-dessus — utile seulement pour un usage sur cet appareil." },
+    ],
+    build: (v, ctx) => {
+      if (v.url) return { text: normalizeUrl(v.url), kind: "gallery", external: true };
+      return buildFilePayload("gallery", v.files || [], ctx);
+    },
   },
   {
     id: "social", label: "Réseau social", icon: "social", desc: "Vos réseaux en un scan",
@@ -209,14 +222,14 @@ const CODE_TYPES = [
     fields: [
       { key: "title", label: "Titre", type: "text", required: true, placeholder: "Vidéo d'anniversaire" },
       { key: "desc", label: "Description", type: "text", placeholder: "Aperçu de ma fête" },
-      { key: "files", label: "Vidéos depuis l'appareil", type: "files", accept: "video/*" },
-      { key: "url", label: "Ou lien de la vidéo (YouTube…)", type: "url", placeholder: "https://youtube.com/..." },
+      { key: "url", label: "Lien de la vidéo déjà en ligne (YouTube, GitHub…)", type: "url", placeholder: "https://youtube.com/...", hint: "Recommandé — le QR Code fonctionnera sur n'importe quel appareil.", githubUpload: true, ghAccept: "video/*" },
+      { key: "files", label: "Ou téléversez une vidéo directement", type: "files", accept: "video/*", hint: "Sans lien ci-dessus — utile seulement pour un usage sur cet appareil." },
     ],
     build: (v, ctx) => {
-      if (v.url && !(v.files || []).length) {
+      if (v.url) {
         return { text: JSON.stringify({ gjm: "video", title: v.title, desc: v.desc || "", url: normalizeUrl(v.url) }), kind: "video", external: true };
       }
-      return buildFilePayload("video", v.files || [], ctx, { title: v.title, desc: v.desc || "", url: v.url ? normalizeUrl(v.url) : "" });
+      return buildFilePayload("video", v.files || [], ctx, { title: v.title, desc: v.desc || "" });
     },
   },
   {
@@ -304,9 +317,10 @@ function renderTypePicker(kind) {
 
 function fieldHtml(f) {
   const req = f.required ? "required" : "";
+  const hintHtml = f.hint ? `<small class="hint">${f.hint}</small>` : "";
   if (f.type === "textarea") {
     return `<div class="field"><label>${f.label}${f.required ? "" : " <span class=dim>(optionnel)</span>"}</label>
-      <textarea data-field="${f.key}" placeholder="${f.placeholder || ""}" ${req}></textarea></div>`;
+      <textarea data-field="${f.key}" placeholder="${f.placeholder || ""}" ${req}></textarea>${hintHtml}</div>`;
   }
   if (f.type === "select") {
     const opts = f.options.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
@@ -322,10 +336,17 @@ function fieldHtml(f) {
         <input type="file" data-field="${f.key}" accept="${f.accept || "*/*"}" ${multi} class="hidden">
       </div>
       <div class="file-preview-grid" data-preview="${f.key}"></div>
+      ${hintHtml}
     </div>`;
   }
   return `<div class="field"><label>${f.label}${f.required ? "" : " <span class=dim>(optionnel)</span>"}</label>
-    <input type="${f.type}" data-field="${f.key}" placeholder="${f.placeholder || ""}" ${req}></div>`;
+    <input type="${f.type}" data-field="${f.key}" placeholder="${f.placeholder || ""}" ${req}>
+    ${f.githubUpload ? `
+      <div class="gh-upload-row">
+        <button type="button" class="btn btn-sm btn-ghost" data-gh-upload="${f.key}" data-gh-accept="${f.ghAccept || "*/*"}">${svg("github")} Téléverser sur GitHub</button>
+        <span class="gh-upload-status" data-gh-status="${f.key}"></span>
+      </div>` : ""}
+    ${hintHtml}</div>`;
 }
 
 function openTypeForm(kind, typeId) {
@@ -372,6 +393,38 @@ function wireFormEvents() {
       }
       state.pendingFiles[key] = input.multiple ? arr : arr.slice(0, 1);
       renderFilePreview(key);
+    });
+  });
+
+  document.querySelectorAll("[data-gh-upload]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const key = btn.dataset.ghUpload;
+      const gh = await idbGet("settings", "github");
+      if (!gh || !gh.token) {
+        toast("Connectez d'abord GitHub dans Option.");
+        openGithubSheet();
+        return;
+      }
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = btn.dataset.ghAccept || "*/*";
+      picker.onchange = async () => {
+        const file = picker.files[0];
+        if (!file) return;
+        const statusEl = document.querySelector(`[data-gh-status="${key}"]`);
+        const targetInput = document.querySelector(`[data-field="${key}"]`);
+        btn.disabled = true;
+        if (statusEl) { statusEl.textContent = "Envoi en cours…"; statusEl.className = "gh-upload-status"; }
+        try {
+          const link = await uploadFileToGithub(file, gh);
+          if (targetInput) targetInput.value = link;
+          if (statusEl) { statusEl.textContent = "✓ Envoyé et lien rempli"; statusEl.className = "gh-upload-status ok"; }
+        } catch (err) {
+          if (statusEl) { statusEl.textContent = err.message || "Échec de l'envoi"; statusEl.className = "gh-upload-status err"; }
+        }
+        btn.disabled = false;
+      };
+      picker.click();
     });
   });
 }
@@ -574,12 +627,21 @@ function renderSavedList(elId, items, emptyMsg) {
   });
 }
 
+function linkBlock(url, label) {
+  return `<div style="text-align:left">
+      <p class="mono" style="font-size:12.5px;word-break:break-all;background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:12px;">${escapeHtml(url)}</p>
+      <button class="btn btn-accent mt-8" id="openLinkBtn" data-href="${escapeHtml(url)}">${svg("external")} ${label || "Ouvrir le lien"}</button>
+    </div>`;
+}
+
 function openCodeDetail(record) {
   let contentHtml = "";
   if (record.type === "text") {
     contentHtml = `<div class="field" style="text-align:left"><label>Contenu</label><div class="mono" style="background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:12px;font-size:13px;white-space:pre-wrap;">${escapeHtml(record.payload)}</div></div>`;
   } else if (record.type === "link") {
-    contentHtml = `<button class="btn btn-accent mt-8" id="openLinkBtn">${svg("external")} Ouvrir le lien</button>`;
+    contentHtml = linkBlock(record.payload);
+  } else if ((record.type === "doc" || record.type === "gallery") && record.external && !record.files) {
+    contentHtml = linkBlock(record.payload, "Ouvrir le fichier");
   } else if (record.type === "wifi") {
     const m = {}; record.payload.replace(/^WIFI:/, "").split(";").forEach((p) => { const i = p.indexOf(":"); if (i > 0) m[p.slice(0, i)] = p.slice(i + 1); });
     contentHtml = `<div style="text-align:left" class="mono" style="font-size:13px;">
@@ -589,14 +651,12 @@ function openCodeDetail(record) {
     try {
       const d = JSON.parse(record.payload);
       contentHtml = `<div style="text-align:left"><p><b>${escapeHtml(d.title)}</b></p><p class="dim mt-8">${escapeHtml(d.desc)}</p>
-        <p class="mt-8">${escapeHtml(d.network)}</p>
-        <button class="btn btn-accent mt-16" id="openLinkBtn" data-href="${escapeHtml(d.link)}">${svg("external")} Ouvrir ${escapeHtml(d.network)}</button></div>`;
+        <p class="mt-8">${escapeHtml(d.network)}</p>` + linkBlock(d.link, "Ouvrir " + d.network) + `</div>`;
     } catch (e) {}
   } else if (record.type === "video" && record.external && !record.files) {
     try {
       const d = JSON.parse(record.payload);
-      contentHtml = `<div style="text-align:left"><p><b>${escapeHtml(d.title)}</b></p><p class="dim mt-8">${escapeHtml(d.desc)}</p>
-        <button class="btn btn-accent mt-16" id="openLinkBtn" data-href="${escapeHtml(d.url)}">${svg("play")} Voir la vidéo</button></div>`;
+      contentHtml = `<div style="text-align:left"><p><b>${escapeHtml(d.title)}</b></p><p class="dim mt-8">${escapeHtml(d.desc)}</p>` + linkBlock(d.url, "Voir la vidéo") + `</div>`;
     } catch (e) {}
   }
   if (record.files && record.files.length) {
@@ -864,6 +924,100 @@ async function renderScanResult(text) {
 /* ============================================================
    OPTIONS — SECURITY
    ============================================================ */
+/* ============================================================
+   OPTIONS — GITHUB (auto-upload for hosted-link QR codes)
+   ============================================================ */
+async function uploadFileToGithub(file, gh) {
+  const dataUrl = await fileToDataUrl(file);
+  const base64 = dataUrl.split(",")[1];
+  const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(gh.username)}/${encodeURIComponent(gh.repo)}/contents/uploads/${encodeURIComponent(safeName)}`;
+  let res;
+  try {
+    res = await fetch(apiUrl, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${gh.token}`,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message: `Ajout via GJM Scan : ${file.name}`, content: base64 }),
+    });
+  } catch (err) {
+    throw new Error("Connexion à GitHub impossible. Vérifiez votre connexion internet.");
+  }
+  if (!res.ok) {
+    let msg = `Erreur GitHub (${res.status})`;
+    if (res.status === 401) msg = "Jeton GitHub invalide ou expiré.";
+    else if (res.status === 404) msg = "Dépôt introuvable — vérifiez le nom d'utilisateur et le dépôt.";
+    else if (res.status === 422) msg = "Un fichier avec ce nom existe déjà.";
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.content && data.content.download_url ? data.content.download_url : "";
+}
+
+async function openGithubSheet() {
+  const gh = await idbGet("settings", "github");
+  const html = gh && gh.token ? `
+    <div class="sheet__grip"></div>
+    <div class="sheet__head"><h3>GitHub</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
+    <p class="dim" style="font-size:13px;margin-bottom:16px;">Connecté au dépôt <b>${escapeHtml(gh.username)}/${escapeHtml(gh.repo)}</b>. Le bouton « Téléverser sur GitHub » est maintenant disponible dans les formulaires Document, Galerie et Vidéo.</p>
+    <button class="btn btn-danger" id="disconnectGithubBtn">${svg("trash")} Déconnecter GitHub</button>
+  ` : `
+    <div class="sheet__grip"></div>
+    <div class="sheet__head"><h3>Connecter GitHub</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
+    <p class="dim" style="font-size:13px;margin-bottom:16px;">Une fois connecté, les formulaires Document, Galerie et Vidéo pourront envoyer un fichier sur GitHub et remplir le lien automatiquement — plus besoin de le faire manuellement.</p>
+    <form id="githubForm">
+      <div class="field"><label>Nom d'utilisateur GitHub</label><input type="text" data-field="username" placeholder="jeanmarcgba-ui" required></div>
+      <div class="field"><label>Nom du dépôt</label><input type="text" data-field="repo" placeholder="gjm-documents" required></div>
+      <div class="field">
+        <label>Jeton d'accès personnel (fine-grained)</label>
+        <input type="password" data-field="token" placeholder="github_pat_..." required>
+        <small class="hint">Créez-le sur github.com/settings/tokens → « Fine-grained tokens » → limitez-le au dépôt ci-dessus avec la permission « Contents: Read and write ». Il reste stocké uniquement sur cet appareil.</small>
+      </div>
+      <div id="githubNote"></div>
+      <button type="submit" class="btn btn-primary">${svg("github")} Connecter</button>
+    </form>
+  `;
+  openSheet(html);
+  const form = document.getElementById("githubForm");
+  if (form) form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const v = {};
+    form.querySelectorAll("[data-field]").forEach((el) => v[el.dataset.field] = el.value.trim());
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    document.getElementById("githubNote").innerHTML = `<p class="dim" style="font-size:12.5px;margin:-4px 0 14px;">Vérification…</p>`;
+    try {
+      const testUrl = `https://api.github.com/repos/${encodeURIComponent(v.username)}/${encodeURIComponent(v.repo)}`;
+      const res = await fetch(testUrl, { headers: { "Authorization": `Bearer ${v.token}`, "Accept": "application/vnd.github+json" } });
+      if (!res.ok) throw new Error(res.status === 404 ? "Dépôt introuvable — vérifiez le nom d'utilisateur et le dépôt." : "Jeton invalide ou sans accès à ce dépôt.");
+      await idbPut("settings", { key: "github", username: v.username, repo: v.repo, token: v.token });
+      closeSheet();
+      updateGithubStatusLabel();
+      toast("GitHub connecté");
+    } catch (err) {
+      document.getElementById("githubNote").innerHTML = `<p style="color:#ff7a70;font-size:12.5px;margin:-4px 0 14px;">${escapeHtml(err.message || "Connexion impossible.")}</p>`;
+      submitBtn.disabled = false;
+    }
+  });
+  const disconnectBtn = document.getElementById("disconnectGithubBtn");
+  if (disconnectBtn) disconnectBtn.addEventListener("click", async () => {
+    if (!confirm("Déconnecter GitHub de cet appareil ?")) return;
+    await idbPut("settings", { key: "github", username: "", repo: "", token: "" });
+    closeSheet();
+    updateGithubStatusLabel();
+    toast("GitHub déconnecté");
+  });
+}
+async function updateGithubStatusLabel() {
+  const gh = await idbGet("settings", "github");
+  const label = document.getElementById("githubStatusLabel");
+  if (!label) return;
+  label.textContent = gh && gh.token ? `Connecté à ${gh.username}/${gh.repo}` : "Connecter un dépôt pour héberger vos fichiers";
+}
+
 async function openSecuritySheet() {
   const auth = await idbGet("settings", "auth");
   const html = auth && auth.enabled ? `
@@ -1149,6 +1303,8 @@ async function boot() {
   document.getElementById("scanDocBtn").addEventListener("click", openDocScanner);
   document.getElementById("scanQrBtn").addEventListener("click", openQrScanner);
   document.getElementById("openSecurityBtn").addEventListener("click", openSecuritySheet);
+  document.getElementById("openGithubBtn").addEventListener("click", openGithubSheet);
+  updateGithubStatusLabel();
   document.getElementById("openBackupBtn").addEventListener("click", openBackupSheet);
   document.getElementById("lockToggleBtn").addEventListener("click", lockApp);
 
