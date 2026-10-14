@@ -1114,8 +1114,8 @@ async function openSecuritySheet() {
     <div class="sheet__head"><h3>Sécurité</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
     <form id="authForm">
       <div class="field"><label>Nom et prénom</label><input type="text" data-field="fullname" required></div>
-      <div class="field"><label>Nom d'utilisateur</label><input type="text" data-field="username" required></div>
-      <div class="field"><label>Mot de passe</label><input type="password" data-field="password" required minlength="4"></div>
+      <div class="field"><label>Nom d'utilisateur</label><input type="text" data-field="username" autocapitalize="off" autocorrect="off" spellcheck="false" required></div>
+      <div class="field"><label>Mot de passe</label><input type="password" data-field="password" autocapitalize="off" autocorrect="off" required minlength="4"></div>
       <div class="field"><label>Confirmer le mot de passe</label><input type="password" data-field="confirm" required minlength="4"></div>
       <div id="authNote"></div>
       <button type="submit" class="btn btn-primary">${svg("lock")} Enregistrer</button>
@@ -1133,7 +1133,7 @@ async function openSecuritySheet() {
     }
     const salt = randomSalt();
     const hash = await sha256Hex(salt + v.password);
-    await idbPut("settings", { key: "auth", fullname: v.fullname, username: v.username, saltHex: salt, hashHex: hash, enabled: true });
+    await idbPut("settings", { key: "auth", fullname: v.fullname, username: (v.username || "").trim(), saltHex: salt, hashHex: hash, enabled: true });
     sessionStorage.setItem("gjmscan_unlocked", "1");
     closeSheet();
     toast("Sécurité activée");
@@ -1164,10 +1164,14 @@ async function showLockScreen() {
       <h1>GJM Scan</h1>
       <p>Connectez-vous pour continuer</p>
       <form id="lockForm">
-        <div class="field"><label>Nom d'utilisateur</label><input type="text" data-field="username" required></div>
-        <div class="field"><label>Mot de passe</label><input type="password" data-field="password" required></div>
+        <div class="field"><label>Nom d'utilisateur</label><input type="text" data-field="username" autocapitalize="off" autocorrect="off" autocomplete="username" spellcheck="false" required></div>
+        <div class="field"><label>Mot de passe</label>
+          <input type="password" data-field="password" autocapitalize="off" autocorrect="off" autocomplete="current-password" spellcheck="false" required>
+          <label class="show-pass"><input type="checkbox" id="showPassChk"> Afficher le mot de passe</label>
+        </div>
         <div class="lock-error" id="lockErr"></div>
         <button type="submit" class="btn btn-primary">${svg("check")} Se connecter</button>
+        <button type="button" class="btn btn-ghost mt-8" id="forgotPassBtn">Mot de passe oublié ?</button>
       </form>
     </div>`;
   document.getElementById("lockForm").addEventListener("submit", async (e) => {
@@ -1176,12 +1180,23 @@ async function showLockScreen() {
     const username = form.querySelector('[data-field="username"]').value;
     const password = form.querySelector('[data-field="password"]').value;
     const hash = await sha256Hex(auth.saltHex + password);
-    if (username === auth.username && hash === auth.hashHex) {
+    const sameUser = username.trim().toLowerCase() === String(auth.username || "").trim().toLowerCase();
+    if (sameUser && hash === auth.hashHex) {
       sessionStorage.setItem("gjmscan_unlocked", "1");
       lockEl.classList.add("hidden");
     } else {
       document.getElementById("lockErr").textContent = "Identifiants incorrects.";
     }
+  });
+  document.getElementById("showPassChk").addEventListener("change", (e) => {
+    document.querySelector('#lockForm [data-field="password"]').type = e.target.checked ? "text" : "password";
+  });
+  document.getElementById("forgotPassBtn").addEventListener("click", async () => {
+    const ok = confirm("Réinitialiser l'application ?\n\nTous les codes générés, documents scannés et réglages (dont la connexion GitHub) enregistrés sur cet appareil seront EFFACÉS, et le mot de passe sera supprimé. Cette action est définitive.");
+    if (!ok) return;
+    await idbClearAll();
+    sessionStorage.clear();
+    location.reload();
   });
 }
 
