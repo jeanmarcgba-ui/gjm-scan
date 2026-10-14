@@ -1,4 +1,4 @@
-const CACHE_NAME = "gjm-scan-v2";
+const CACHE_NAME = "gjm-scan-v3";
 
 // Files that change when the app is updated — always try the network
 // first so a reload picks up the latest version automatically.

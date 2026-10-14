@@ -34,6 +34,8 @@ const ICONS = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-7 8 7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9a1 1 0 001 1h3v-6h4v6h3a1 1 0 001-1v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   github: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="9" r="2.4"/><path d="M6 8.4V15.6M6 12c0-3 2-5 5-5h3.6" stroke-linecap="round"/></svg>`,
 };
+ICONS.shield = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v5.5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6l7-3z" stroke-linejoin="round"/><path d="M9 12l2.2 2.2L15.5 10" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+ICONS.plus = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>`;
 function svg(name) { return ICONS[name] || ""; }
 
 /* ============================================================
@@ -52,7 +54,7 @@ function toast(msg) {
    INDEXEDDB LAYER
    ============================================================ */
 const DB_NAME = "gjmscan";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let _dbp = null;
 function openDB() {
   if (_dbp) return _dbp;
@@ -63,6 +65,7 @@ function openDB() {
       if (!db.objectStoreNames.contains("codes")) db.createObjectStore("codes", { keyPath: "id" });
       if (!db.objectStoreNames.contains("scans")) db.createObjectStore("scans", { keyPath: "id" });
       if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("vault")) db.createObjectStore("vault", { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -105,9 +108,18 @@ async function idbDelete(store, key) {
     tx.onerror = () => reject(tx.error);
   });
 }
+async function idbClearStore(store) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
 async function idbClearAll() {
   const db = await openDB();
-  for (const store of ["codes", "scans", "settings"]) {
+  for (const store of ["codes", "scans", "settings", "vault"]) {
     await new Promise((resolve, reject) => {
       const tx = db.transaction(store, "readwrite");
       tx.objectStore(store).clear();
@@ -297,6 +309,7 @@ function closeSheet() {
   document.getElementById("sheetBody").innerHTML = "";
   stopQrScanner();
   stopDocCamera();
+  if (typeof revokeVaultUrls === "function") revokeVaultUrls();
 }
 document.addEventListener("click", (e) => {
   if (e.target && e.target.id === "sheetOverlay") closeSheet();
@@ -1224,8 +1237,12 @@ function openBackupSheet() {
 }
 async function exportBackup() {
   const data = {
-    version: 1, exportedAt: new Date().toISOString(),
+    version: 2, exportedAt: new Date().toISOString(),
     codes: await idbAll("codes"), scans: await idbAll("scans"), settings: await idbAll("settings"),
+    vault: (await idbAll("vault")).map((r) => ({
+      id: r.id, createdAt: r.createdAt,
+      mIv: b64FromBuf(r.mIv), mCt: b64FromBuf(r.mCt), dIv: b64FromBuf(r.dIv), dCt: b64FromBuf(r.dCt),
+    })),
   };
   const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
   downloadBlob(blob, `gjm-scan-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`);
@@ -1234,10 +1251,26 @@ async function restoreBackup(file) {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
+    if (Array.isArray(data.vault) && data.vault.length) {
+      const cur = await idbGet("settings", "vault");
+      const incoming = (data.settings || []).find((r) => r.key === "vault");
+      if (cur && incoming && cur.saltB64 !== incoming.saltB64 &&
+          !confirm("Cette sauvegarde contient une autre « Vie privée ». Remplacer celle de cet appareil ?")) {
+        toast("Restauration annulée");
+        return;
+      }
+      lockVault(true);
+      await idbClearStore("vault");
+      for (const r of data.vault) {
+        await idbPut("vault", { id: r.id, createdAt: r.createdAt,
+          mIv: bufFromB64(r.mIv), mCt: bufFromB64(r.mCt), dIv: bufFromB64(r.dIv), dCt: bufFromB64(r.dCt) });
+      }
+    }
     for (const rec of data.codes || []) await idbPut("codes", rec);
     for (const rec of data.scans || []) await idbPut("scans", rec);
     for (const rec of data.settings || []) await idbPut("settings", rec);
     refreshSavedLists();
+    if (state.activeTab === "prive") renderPrive();
     closeSheet();
     toast("Sauvegarde restaurée");
   } catch (err) {
@@ -1249,9 +1282,11 @@ async function restoreBackup(file) {
    NAVIGATION
    ============================================================ */
 function switchTab(tab) {
+  if (state.activeTab === "prive" && tab !== "prive") lockVault(true);
   state.activeTab = tab;
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + tab));
+  if (tab === "prive") renderPrive();
 }
 
 /* ============================================================
@@ -1413,6 +1448,330 @@ async function boot() {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 }
+/* ============================================================
+   VIE PRIVÉE — coffre chiffré (AES-256-GCM, clé dérivée par PBKDF2)
+   Rien n'est lisible sans le code secret. Les données restent sur l'appareil.
+   ============================================================ */
+const VAULT_ITER = 250000;
+const VAULT_CHECK = "GJM-VAULT-OK";
+const VAULT_IDLE_MS = 3 * 60 * 1000;
+let vaultKey = null;
+let vaultBusy = false;
+let vaultUrls = [];
+let vaultIdleTimer = null;
+
+function b64FromBuf(buf) {
+  const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let s = "";
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function bufFromB64(b64) {
+  const s = atob(b64);
+  const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
+async function vaultDeriveKey(code, salt, iter) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(code), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function vaultEncrypt(key, bytes) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes);
+  return { iv, ct: new Uint8Array(ct) };
+}
+async function vaultDecrypt(key, iv, ct) {
+  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct));
+}
+async function vaultSetup(code) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await vaultDeriveKey(code, salt, VAULT_ITER);
+  const chk = await vaultEncrypt(key, new TextEncoder().encode(VAULT_CHECK));
+  await idbPut("settings", { key: "vault", saltB64: b64FromBuf(salt), iter: VAULT_ITER, chkIv: b64FromBuf(chk.iv), chkCt: b64FromBuf(chk.ct) });
+  vaultKey = key;
+  vaultTouch();
+}
+async function vaultUnlock(code) {
+  const cfg = await idbGet("settings", "vault");
+  if (!cfg) return false;
+  try {
+    const key = await vaultDeriveKey(code, bufFromB64(cfg.saltB64), cfg.iter || VAULT_ITER);
+    const plain = await vaultDecrypt(key, bufFromB64(cfg.chkIv), bufFromB64(cfg.chkCt));
+    if (new TextDecoder().decode(plain) !== VAULT_CHECK) return false;
+    vaultKey = key;
+    vaultTouch();
+    return true;
+  } catch (e) { return false; }
+}
+function revokeVaultUrls() {
+  vaultUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
+  vaultUrls = [];
+}
+function vaultTouch() {
+  clearTimeout(vaultIdleTimer);
+  if (!vaultKey) return;
+  vaultIdleTimer = setTimeout(() => { if (!vaultBusy) { lockVault(false); toast("Vie privée verrouillée (inactivité)"); } }, VAULT_IDLE_MS);
+}
+["click", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, () => { if (vaultKey) vaultTouch(); }, true));
+
+function lockVault(silent) {
+  const wasOpen = !!vaultKey;
+  vaultKey = null;
+  clearTimeout(vaultIdleTimer);
+  revokeVaultUrls();
+  const ov = document.getElementById("sheetOverlay");
+  if (wasOpen && ov && document.getElementById("sheetBody").querySelector("[data-vault-sheet]")) closeSheet();
+  if (document.getElementById("priveRoot")) renderPrive();
+  if (wasOpen && !silent) toast("Vie privée verrouillée");
+}
+
+async function vaultAddItem(meta, bytes) {
+  const m = await vaultEncrypt(vaultKey, new TextEncoder().encode(JSON.stringify(meta)));
+  const d = await vaultEncrypt(vaultKey, bytes);
+  const rec = { id: uid(), createdAt: Date.now(), mIv: m.iv, mCt: m.ct, dIv: d.iv, dCt: d.ct };
+  await idbPut("vault", rec);
+  return rec;
+}
+async function vaultListItems() {
+  const recs = await idbAll("vault");
+  const out = [];
+  for (const r of recs) {
+    try {
+      const meta = JSON.parse(new TextDecoder().decode(await vaultDecrypt(vaultKey, r.mIv, r.mCt)));
+      out.push({ id: r.id, createdAt: r.createdAt, meta, rec: r });
+    } catch (e) { /* élément illisible ignoré */ }
+  }
+  return out.sort((a, b) => (b.meta.updatedAt || b.createdAt) - (a.meta.updatedAt || a.createdAt));
+}
+async function vaultSaveItem(rec, meta, bytes) {
+  const m = await vaultEncrypt(vaultKey, new TextEncoder().encode(JSON.stringify(meta)));
+  rec.mIv = m.iv; rec.mCt = m.ct;
+  if (bytes) { const d = await vaultEncrypt(vaultKey, bytes); rec.dIv = d.iv; rec.dCt = d.ct; }
+  await idbPut("vault", rec);
+}
+async function vaultChangePassword(oldCode, newCode) {
+  if (!(await vaultUnlock(oldCode))) return false;
+  const oldKey = vaultKey;
+  const recs = await idbAll("vault");
+  const plain = [];
+  for (const r of recs) plain.push({ r, m: await vaultDecrypt(oldKey, r.mIv, r.mCt), d: await vaultDecrypt(oldKey, r.dIv, r.dCt) });
+  await vaultSetup(newCode);
+  for (const p of plain) await vaultSaveItem(p.r, JSON.parse(new TextDecoder().decode(p.m)), p.d);
+  return true;
+}
+async function vaultReset() {
+  lockVault(true);
+  await idbClearStore("vault");
+  await idbDelete("settings", "vault");
+  renderPrive();
+}
+function fmtSize(n) {
+  if (n < 1024) return n + " o";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " Ko";
+  return (n / 1048576).toFixed(1) + " Mo";
+}
+
+async function renderPrive() {
+  const root = document.getElementById("priveRoot");
+  if (!root) return;
+  const cfg = await idbGet("settings", "vault");
+  if (!cfg) return renderPriveSetup(root);
+  if (!vaultKey) return renderPriveLocked(root);
+  return renderPriveOpen(root);
+}
+function priveHead(sub) {
+  return `<div class="view-head"><span class="eyebrow">Coffre chiffré</span><h1>Vie privée</h1><p>${sub}</p></div>`;
+}
+function renderPriveSetup(root) {
+  root.innerHTML = priveHead("Rangez ici vos données privées. Elles sont chiffrées et protégées par un code secret.") + `
+    <div class="vault-hero"><span data-icon="shield"></span><div><b>Créez votre code secret</b><small>Sans ce code, personne ne peut lire le contenu — pas même GJM Scan.</small></div></div>
+    <div class="vault-warn"><b>Important :</b> si vous oubliez ce code, vos données privées sont <b>définitivement perdues</b>. Il n'existe aucun moyen de le récupérer.</div>
+    <form class="vault-form" id="vaultSetupForm">
+      <div class="field"><label>Code secret (6 caractères minimum)</label><input type="password" data-f="code" minlength="6" autocomplete="new-password" autocapitalize="off" required></div>
+      <div class="field"><label>Confirmer le code secret</label><input type="password" data-f="confirm" minlength="6" autocomplete="new-password" autocapitalize="off" required></div>
+      <div id="vaultNote"></div>
+      <button type="submit" class="btn btn-primary">${svg("shield")} Créer ma Vie privée</button>
+    </form>`;
+  root.querySelectorAll("[data-icon]").forEach((el) => el.innerHTML = svg(el.dataset.icon));
+  document.getElementById("vaultSetupForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const code = f.querySelector('[data-f="code"]').value, conf = f.querySelector('[data-f="confirm"]').value;
+    if (code !== conf) { document.getElementById("vaultNote").innerHTML = `<p class="vault-err">Les codes ne correspondent pas.</p>`; return; }
+    f.querySelector("button").disabled = true;
+    await vaultSetup(code);
+    toast("Vie privée créée");
+    renderPrive();
+  });
+}
+function renderPriveLocked(root) {
+  root.innerHTML = priveHead("Contenu verrouillé.") + `
+    <div class="vault-hero"><span data-icon="lock"></span><div><b>Vie privée verrouillée</b><small>Entrez votre code secret pour accéder à vos données.</small></div></div>
+    <form class="vault-form" id="vaultUnlockForm">
+      <div class="field"><label>Code secret</label><input type="password" data-f="code" autocomplete="off" autocapitalize="off" required></div>
+      <div id="vaultNote"></div>
+      <button type="submit" class="btn btn-primary">${svg("lock")} Déverrouiller</button>
+    </form>
+    <button class="btn btn-ghost btn-sm vault-forgot" id="vaultForgotBtn">Code oublié ?</button>`;
+  root.querySelectorAll("[data-icon]").forEach((el) => el.innerHTML = svg(el.dataset.icon));
+  document.getElementById("vaultUnlockForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const inp = e.target.querySelector('[data-f="code"]');
+    const btn = e.target.querySelector("button");
+    btn.disabled = true;
+    const ok = await vaultUnlock(inp.value);
+    if (ok) { renderPrive(); return; }
+    btn.disabled = false;
+    inp.value = "";
+    document.getElementById("vaultNote").innerHTML = `<p class="vault-err">Code incorrect.</p>`;
+  });
+  document.getElementById("vaultForgotBtn").addEventListener("click", async () => {
+    if (!confirm("Code oublié ?\n\nLes données de Vie privée ne peuvent pas être récupérées. Vous pouvez seulement TOUT EFFACER (notes et fichiers privés) pour recommencer avec un nouveau code.\n\nEffacer définitivement la Vie privée ?")) return;
+    await vaultReset();
+    toast("Vie privée effacée");
+  });
+}
+async function renderPriveOpen(root) {
+  const items = await vaultListItems();
+  root.innerHTML = priveHead("Déverrouillée — se verrouille automatiquement quand vous quittez cette page.") + `
+    <div class="btn-row vault-actions">
+      <button class="btn btn-primary" id="vaultNoteBtn">${svg("plus")} Note</button>
+      <button class="btn btn-accent" id="vaultFileBtn">${svg("upload")} Fichier</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="vaultLockBtn">${svg("lock")} Verrouiller</button>
+      <button class="btn" id="vaultChangeBtn">Changer le code</button>
+    </div>
+    <div class="section-title">Mes données privées (${items.length})</div>
+    <div class="saved-list" id="vaultList">${items.length ? items.map((it) => `
+      <div class="saved-item" data-vid="${it.id}">
+        <span class="saved-item__thumb vault-ico">${svg(it.meta.kind === "note" ? "text" : "doc")}</span>
+        <span class="saved-item__body"><b>${escapeHtml(it.meta.title)}</b><small>${it.meta.kind === "note" ? "Note" : escapeHtml(fmtSize(it.meta.size || 0))}</small></span>
+        ${svg("chevron")}
+      </div>`).join("") : `<p class="dim" style="font-size:13px;">Rien pour le moment. Ajoutez une note ou un fichier.</p>`}</div>`;
+  document.getElementById("vaultLockBtn").addEventListener("click", () => lockVault(false));
+  document.getElementById("vaultNoteBtn").addEventListener("click", () => openVaultNoteSheet(null));
+  document.getElementById("vaultFileBtn").addEventListener("click", openVaultFileSheet);
+  document.getElementById("vaultChangeBtn").addEventListener("click", openVaultChangeSheet);
+  root.querySelectorAll("[data-vid]").forEach((el) => el.addEventListener("click", () => {
+    const it = items.find((x) => x.id === el.dataset.vid);
+    if (!it) return;
+    if (it.meta.kind === "note") openVaultNoteSheet(it); else openVaultFileViewSheet(it);
+  }));
+}
+async function openVaultNoteSheet(it) {
+  if (!vaultKey) return;
+  let text = "";
+  if (it) text = new TextDecoder().decode(await vaultDecrypt(vaultKey, it.rec.dIv, it.rec.dCt));
+  openSheet(`
+    <div class="sheet__grip"></div>
+    <div class="sheet__head" data-vault-sheet><h3>${it ? "Note" : "Nouvelle note"}</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
+    <form id="vNoteForm">
+      <div class="field"><label>Titre</label><input type="text" data-f="title" required></div>
+      <div class="field"><label>Contenu</label><textarea data-f="text" rows="8"></textarea></div>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">${svg("check")} Enregistrer</button>
+        ${it ? `<button type="button" class="btn btn-danger" id="vNoteDel">${svg("trash")} Supprimer</button>` : ""}
+      </div>
+    </form>`);
+  const form = document.getElementById("vNoteForm");
+  form.querySelector('[data-f="title"]').value = it ? it.meta.title : "";
+  form.querySelector('[data-f="text"]').value = text;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!vaultKey) return;
+    const title = form.querySelector('[data-f="title"]').value.trim();
+    const body = new TextEncoder().encode(form.querySelector('[data-f="text"]').value);
+    const meta = { kind: "note", title, size: body.length, updatedAt: Date.now() };
+    if (it) await vaultSaveItem(it.rec, meta, body); else await vaultAddItem(meta, body);
+    closeSheet(); renderPrive(); toast("Note enregistrée");
+  });
+  const del = document.getElementById("vNoteDel");
+  if (del) del.addEventListener("click", async () => {
+    if (!confirm("Supprimer cette note ?")) return;
+    await idbDelete("vault", it.id); closeSheet(); renderPrive();
+  });
+}
+function openVaultFileSheet() {
+  if (!vaultKey) return;
+  openSheet(`
+    <div class="sheet__grip"></div>
+    <div class="sheet__head" data-vault-sheet><h3>Ajouter des fichiers privés</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
+    <p class="dim" style="font-size:13px;margin-bottom:14px;">Photos, PDF, documents… Ils seront chiffrés et rangés uniquement sur cet appareil.</p>
+    <div class="field"><input type="file" id="vFileInput" multiple></div>
+    <div id="vFileNote"></div>
+    <button class="btn btn-primary" id="vFileSave">${svg("shield")} Chiffrer et enregistrer</button>`);
+  document.getElementById("vFileSave").addEventListener("click", async () => {
+    const files = Array.from(document.getElementById("vFileInput").files || []);
+    if (!files.length) { toast("Choisissez au moins un fichier"); return; }
+    const btn = document.getElementById("vFileSave");
+    btn.disabled = true; vaultBusy = true;
+    try {
+      for (const f of files) {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        await vaultAddItem({ kind: "file", title: f.name, name: f.name, mime: f.type || "application/octet-stream", size: f.size, updatedAt: Date.now() }, bytes);
+      }
+    } finally { vaultBusy = false; }
+    closeSheet(); renderPrive(); toast(files.length + " fichier(s) chiffré(s)");
+  });
+}
+async function openVaultFileViewSheet(it) {
+  if (!vaultKey) return;
+  const bytes = await vaultDecrypt(vaultKey, it.rec.dIv, it.rec.dCt);
+  const blob = new Blob([bytes], { type: it.meta.mime || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  vaultUrls.push(url);
+  const m = it.meta.mime || "";
+  const preview = m.startsWith("image/") ? `<img class="vault-preview" src="${url}" alt="">`
+    : m.startsWith("video/") ? `<video class="vault-preview" src="${url}" controls playsinline></video>`
+    : m === "application/pdf" ? `<p class="dim" style="font-size:13px;">Aperçu PDF indisponible ici : utilisez « Ouvrir » ou « Télécharger ».</p>`
+    : `<p class="dim" style="font-size:13px;">Aucun aperçu pour ce type de fichier.</p>`;
+  openSheet(`
+    <div class="sheet__grip"></div>
+    <div class="sheet__head" data-vault-sheet><h3>${escapeHtml(it.meta.title)}</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
+    ${preview}
+    <p class="vault-meta">${escapeHtml(fmtSize(it.meta.size || 0))} · ${escapeHtml(m || "fichier")}</p>
+    <div class="btn-row">
+      <button class="btn btn-accent" id="vFileDl">${svg("download")} Télécharger</button>
+      <button class="btn btn-danger" id="vFileDel">${svg("trash")} Supprimer</button>
+    </div>`);
+  document.getElementById("vFileDl").addEventListener("click", () => downloadBlob(blob, it.meta.name || it.meta.title));
+  document.getElementById("vFileDel").addEventListener("click", async () => {
+    if (!confirm("Supprimer ce fichier privé ?")) return;
+    await idbDelete("vault", it.id); closeSheet(); renderPrive();
+  });
+}
+function openVaultChangeSheet() {
+  if (!vaultKey) return;
+  openSheet(`
+    <div class="sheet__grip"></div>
+    <div class="sheet__head" data-vault-sheet><h3>Changer le code secret</h3><button class="iconbtn" data-close-sheet>${svg("close")}</button></div>
+    <form id="vChangeForm">
+      <div class="field"><label>Code actuel</label><input type="password" data-f="old" autocomplete="off" required></div>
+      <div class="field"><label>Nouveau code (6 caractères minimum)</label><input type="password" data-f="new" minlength="6" autocomplete="new-password" required></div>
+      <div class="field"><label>Confirmer le nouveau code</label><input type="password" data-f="conf" minlength="6" autocomplete="new-password" required></div>
+      <div id="vChangeNote"></div>
+      <button type="submit" class="btn btn-primary">${svg("check")} Changer le code</button>
+    </form>`);
+  document.getElementById("vChangeForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, g = (k) => f.querySelector(`[data-f="${k}"]`).value;
+    const note = document.getElementById("vChangeNote");
+    if (g("new") !== g("conf")) { note.innerHTML = `<p class="vault-err">Les nouveaux codes ne correspondent pas.</p>`; return; }
+    f.querySelector("button").disabled = true; vaultBusy = true;
+    let ok = false;
+    try { ok = await vaultChangePassword(g("old"), g("new")); } finally { vaultBusy = false; }
+    if (!ok) { f.querySelector("button").disabled = false; note.innerHTML = `<p class="vault-err">Code actuel incorrect.</p>`; return; }
+    closeSheet(); renderPrive(); toast("Code modifié");
+  });
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && vaultKey && !vaultBusy) lockVault(true);
+});
+
 // Global safety net: if a hosted thumbnail (saved-item / gallery item) fails
 // to load, fall back to a plain document icon instead of a broken image.
 document.addEventListener("error", (e) => {
